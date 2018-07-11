@@ -13,7 +13,7 @@
 
 Name:           kmod-%{oname}
 Version:        @VERSION@
-Release:        1%{?dist}
+Release:        1_%(basename %kversion .%_target_cpu | tr '-' '_')
 Summary:        Open vSwitch kernel module
 
 Group:          System/Kernel

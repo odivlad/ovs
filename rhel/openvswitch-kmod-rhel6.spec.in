@@ -16,7 +16,7 @@ Version:        @VERSION@
 Release:        1_%(basename %kversion .%_target_cpu | tr '-' '_')
 Summary:        Open vSwitch kernel module
 
-Group:          System/Kernel
+Group:          System Environment/Kernel
 License:        GPLv2
 URL:            http://openvswitch.org/
 Source0:        %{oname}-%{version}.tar.gz

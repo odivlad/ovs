@@ -10,7 +10,7 @@
 
 %define oname openvswitch
 
-Name:           %{oname}-kmod
+Name:           kmod-%{oname}
 Version:        @VERSION@
 Release:        1%{?dist}
 Summary:        Open vSwitch kernel module
@@ -19,9 +19,7 @@ Group:          System/Kernel
 License:        GPLv2
 URL:            http://openvswitch.org/
 Source0:        %{oname}-%{version}.tar.gz
-Source1:        %{oname}-kmod.files
 BuildRoot:      %(mktemp -ud %{_tmppath}/%{name}-%{version}-%{release}-XXXXXX)
-BuildRequires:  %kernel_module_package_buildreqs
 
 # Without this we get an empty openvswitch-debuginfo package (whose name
 # conflicts with the openvswitch-debuginfo package for OVS userspace).
@@ -34,8 +32,6 @@ BuildRequires:  %kernel_module_package_buildreqs
 # Use -D 'kflavors default debug kdump' to build packages for
 # specified kernel variants.
 %{!?kflavors:%define kflavors default}
-
-%kernel_module_package -n %{oname} -f %{SOURCE1} %kflavors
 
 %description
 Open vSwitch Linux kernel module.
@@ -96,7 +92,8 @@ if [ "$1" = 0 ]; then  # Erase, not upgrade
 fi
 
 %files
-%defattr(644,root,root)
+%defattr(644,root,root,755)
+/lib/modules/%2-%1
 /etc/depmod.d/%{oname}.conf
 
 %clean

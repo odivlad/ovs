@@ -30,6 +30,8 @@
 #include "openflow/openflow.h"
 #include "unaligned.h"
 
+#define IDLE_TIMEOUT_C2_MAX 300
+
 static ovs_be16
 get_be16(const void **pp)
 {
@@ -317,7 +319,13 @@ learn_execute(const struct ofpact_learn *learn, const struct flow *flow,
     fm->modify_cookie = fm->new_cookie != OVS_BE64_MAX;
     fm->table_id = learn->table_id;
     fm->command = OFPFC_MODIFY_STRICT;
-    fm->idle_timeout = learn->idle_timeout;
+    if (learn->idle_timeout > IDLE_TIMEOUT_C2_MAX) {
+        fm->idle_timeout = IDLE_TIMEOUT_C2_MAX;
+    }
+    else {
+        fm->idle_timeout = learn->idle_timeout;
+    }
+
     fm->hard_timeout = learn->hard_timeout;
     fm->buffer_id = UINT32_MAX;
     fm->out_port = OFPP_NONE;

@@ -32,6 +32,7 @@
 #include "vl-mff-map.h"
 #include "unaligned.h"
 
+#define IDLE_TIMEOUT_C2_MAX 300
 
 /* Checks that 'learn' is a valid action on 'flow'.  Returns 0 if it is valid,
  * otherwise an OFPERR_*. */
@@ -104,7 +105,13 @@ learn_execute(const struct ofpact_learn *learn, const struct flow *flow,
     fm->modify_cookie = fm->new_cookie != OVS_BE64_MAX;
     fm->table_id = learn->table_id;
     fm->command = OFPFC_MODIFY_STRICT;
-    fm->idle_timeout = learn->idle_timeout;
+    if (learn->idle_timeout > IDLE_TIMEOUT_C2_MAX) {
+        fm->idle_timeout = IDLE_TIMEOUT_C2_MAX;
+    }
+    else {
+        fm->idle_timeout = learn->idle_timeout;
+    }
+
     fm->hard_timeout = learn->hard_timeout;
     fm->importance = 0;
     fm->buffer_id = UINT32_MAX;

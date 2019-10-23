@@ -4026,9 +4026,6 @@ bridge_configure_tables(struct bridge *br)
             struct ovsrec_flow_table *cfg = br->cfg->value_flow_tables[j++];
 
             s.name = cfg->name;
-            if (cfg->n_flow_limit && *cfg->flow_limit < UINT_MAX) {
-                s.max_flows = *cfg->flow_limit;
-            }
 
             s.enable_eviction = (cfg->overflow_policy
                                  && !strcmp(cfg->overflow_policy, "evict"));

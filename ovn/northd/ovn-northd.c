@@ -5037,6 +5037,34 @@ build_lswitch_flows(struct hmap *datapaths, struct hmap *ports,
         ovn_lflow_add(lflows, od, S_SWITCH_IN_ARP_ND_RSP, 0, "1", "next;");
     }
 
+    /* Ingress and Egress Pre-ACL Table (Priority 100).
+    *
+    * Do not track traffic "to-lport" or "from-lport" which has only
+    * stateless ACLs. */
+    HMAP_FOR_EACH (op, key_node, ports) {
+        if (!op->nbsp) {
+            continue;
+        }
+
+        if (strstr(op->json_key, "gateway") == NULL) {
+            continue;
+        }
+
+        struct ds match_in = DS_EMPTY_INITIALIZER;
+        struct ds match_out = DS_EMPTY_INITIALIZER;
+
+        ds_put_format(&match_in, "ip && inport == %s", op->json_key);
+        ds_put_format(&match_out, "ip && outport == %s", op->json_key);
+
+        ovn_lflow_add(lflows, op->od, S_SWITCH_IN_PRE_ACL, 110,
+                    ds_cstr(&match_in), "next;");
+        ovn_lflow_add(lflows, op->od, S_SWITCH_OUT_PRE_ACL, 110,
+                    ds_cstr(&match_out), "next;");
+
+        ds_destroy(&match_in);
+        ds_destroy(&match_out);
+    }
+
     /* Logical switch ingress table 12 and 13: DHCP options and response
          * priority 100 flows. */
     HMAP_FOR_EACH (op, key_node, ports) {

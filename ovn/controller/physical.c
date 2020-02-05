@@ -1351,7 +1351,7 @@ physical_run(struct ovsdb_idl_index *sbrec_port_binding_by_name,
             /* For packets received from a vxlan tunnel, set a flag to that
              * effect. */
             put_load(1, MFF_LOG_FLAGS, MLF_RCV_FROM_VXLAN_BIT, 1, &ofpacts);
-            put_resubmit(OFTABLE_LOG_INGRESS_PIPELINE, &ofpacts);
+            put_resubmit(OFTABLE_LOG_INGRESS_L2_LKP, &ofpacts);
 
             ofctrl_add_flow(flow_table, OFTABLE_PHY_TO_LOG, 100, 0, &match,
                             &ofpacts, hc_uuid);

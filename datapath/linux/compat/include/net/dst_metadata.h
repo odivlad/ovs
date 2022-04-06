@@ -1,10 +1,12 @@
 #ifndef __NET_DST_METADATA_WRAPPER_H
 #define __NET_DST_METADATA_WRAPPER_H 1
 
+#ifndef HAVE_METADATA_DST_ALLOC_WITH_METADATA_TYPE
 enum metadata_type {
 	METADATA_IP_TUNNEL,
 	METADATA_HW_PORT_MUX,
 };
+#endif
 
 #ifdef USE_UPSTREAM_TUNNEL
 #include_next <net/dst_metadata.h>

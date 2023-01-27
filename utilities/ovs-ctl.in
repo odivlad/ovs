@@ -51,6 +51,11 @@ set_hostname () {
     ovs_vsctl add Open_vSwitch . external-ids hostname="$hn"
 }
 
+set_umask () {
+    # set umask to allow ovs daemons set 0770 permissions on sockets they create
+    umask 0002
+}
+
 set_system_ids () {
     set ovs_vsctl set Open_vSwitch .
 
@@ -549,6 +554,8 @@ do
             ;;
     esac
 done
+
+set_umask
 case $command in
     start)
         start_ovsdb || exit 1

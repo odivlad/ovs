@@ -1182,6 +1182,8 @@ AC_DEFUN([OVS_CHECK_LINUX_COMPAT], [
                   [OVS_DEFINE([HAVE_KVMALLOC_ARRAY])])
   OVS_GREP_IFELSE([$KSRC/include/linux/mm.h], [kvmalloc_node],
                   [OVS_DEFINE([HAVE_KVMALLOC_NODE])])
+  OVS_GREP_IFELSE([$KSRC/include/linux/mm.h], [kvmalloc],
+                  [OVS_DEFINE([HAVE_KVMALLOC])])
   OVS_GREP_IFELSE([$KSRC/include/net/netfilter/nf_conntrack_l3proto.h],
                   [nf_conntrack_l3proto],
                   [OVS_DEFINE([HAVE_NF_CONNTRACK_L3PROATO_H])])

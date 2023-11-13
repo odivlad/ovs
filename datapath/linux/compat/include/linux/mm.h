@@ -10,10 +10,12 @@ extern void *vmalloc_node(unsigned long size, int node);
 #else
 extern void *kvmalloc_node(size_t size, gfp_t flags, int node);
 #endif /* HAVE_KVMALLOC_NODE */
+#ifndef HAVE_KVMALLOC
 static inline void *kvmalloc(size_t size, gfp_t flags)
 {
 	return kvmalloc_node(size, flags, NUMA_NO_NODE);
 }
+#endif /* HAVE_KVMALLOC */
 static inline void *kvzalloc_node(size_t size, gfp_t flags, int node)
 {
 	return kvmalloc_node(size, flags | __GFP_ZERO, node);

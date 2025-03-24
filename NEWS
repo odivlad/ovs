@@ -4,6 +4,9 @@ Post-v3.5.0
      * Bond rebalancing log messages of INFO log level are highly reduced: they
        are now printed once in rebalance run.  Previous detailed log messages
        have been moved to the DBG log level.
+     * Bond rebalancing is performed if the most loaded bond member transfers
+       at least ~3% of minimum member link speed more traffic in average by
+       last rebalance_interval, than the least loaded bond member.
    - DPDK:
      * New debug appctl command 'dpdk/get-memzone-stats'.
    - ovs-ctl:

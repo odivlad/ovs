@@ -63,6 +63,8 @@ struct bond_entry {
     struct bond_member *member; /* Assigned member, NULL if unassigned. */
     uint64_t tx_bytes           /* Count of bytes recently transmitted. */
         OVS_GUARDED_BY(rwlock);
+    /* Average bytes per second recently transmitted. */
+    uint64_t tx_bps_avg OVS_GUARDED_BY(rwlock);
     struct ovs_list list_node;  /* In bond_member's 'entries' list. */
 
     /* Recirculation.
@@ -95,7 +97,7 @@ struct bond_member {
     /* Rebalancing info.  Used only by bond_rebalance(). */
     struct ovs_list bal_node;   /* In bond_rebalance()'s 'bals' list. */
     struct ovs_list entries;    /* 'struct bond_entry's assigned here. */
-    uint64_t tx_bytes;          /* Sum across 'tx_bytes' of entries. */
+    uint64_t tx_bps_avg;        /* Sum across 'tx_bps_avg' of entries. */
 };
 
 /* A bond, that is, a set of network devices grouped to improve performance or
@@ -1163,8 +1165,8 @@ log_bals(struct bond *bond, const struct ovs_list *bals)
             if (ds.length) {
                 ds_put_char(&ds, ',');
             }
-            ds_put_format(&ds, " %s %"PRIu64"kB",
-                          member->name, member->tx_bytes / 1024);
+            ds_put_format(&ds, " %s %"PRIu64"kB/s",
+                          member->name, member->tx_bps_avg / 1024);
 
             if (!member->enabled) {
                 ds_put_cstr(&ds, " (disabled)");
@@ -1195,19 +1197,19 @@ bond_shift_load(struct bond_entry *hash, struct bond_member *to)
 {
     struct bond_member *from = hash->member;
     struct bond *bond = from->bond;
-    uint64_t delta = hash->tx_bytes;
+    uint64_t delta = hash->tx_bps_avg;
 
     VLOG_DBG("bond %s: shift %"PRIu64"kB of load (with hash %"PRIdPTR") "
              "from %s to %s (now carrying %"PRIu64"kB and "
              "%"PRIu64"kB load, respectively)",
              bond->name, delta / 1024, hash - bond->hash,
              from->name, to->name,
-             (from->tx_bytes - delta) / 1024,
-             (to->tx_bytes + delta) / 1024);
+             (from->tx_bps_avg - delta) / 1024,
+             (to->tx_bps_avg + delta) / 1024);
 
     /* Shift load away from 'from' to 'to'. */
-    from->tx_bytes -= delta;
-    to->tx_bytes += delta;
+    from->tx_bps_avg -= delta;
+    to->tx_bps_avg += delta;
 
     /* Arrange for flows to be revalidated. */
     hash->member = to;
@@ -1222,15 +1224,16 @@ bond_shift_load(struct bond_entry *hash, struct bond_member *to)
  * The list of entries is sorted in descending order of load.  This allows us
  * to collect subset of entries with accumulated load close to ideal.  */
 static size_t
-choose_entries_to_migrate(const struct bond_member *from, uint64_t to_tx_bytes,
+choose_entries_to_migrate(const struct bond_member *from,
+                          uint64_t to_tx_bps_avg,
                           struct bond_entry **to_migrate)
     OVS_REQ_WRLOCK(rwlock)
 {
     struct bond_entry *e;
     /* Note, the ideal traffic is the mid point between 'from' and 'to'.
      * This value does not change by rebalancing.  */
-    uint64_t ideal_tx_bytes = (from->tx_bytes + to_tx_bytes) / 2;
-    uint64_t ideal_delta = ideal_tx_bytes - to_tx_bytes;
+    uint64_t ideal_tx_bps_avg = (from->tx_bps_avg + to_tx_bps_avg) / 2;
+    uint64_t ideal_delta = ideal_tx_bps_avg - to_tx_bps_avg;
     uint64_t delta = 0;         /* The amount to rebalance. */
     uint64_t new_low;           /* The lower bandwidth between 'to' and 'from'
                                  * after rebalancing. */
@@ -1244,10 +1247,10 @@ choose_entries_to_migrate(const struct bond_member *from, uint64_t to_tx_bytes,
     }
 
     LIST_FOR_EACH (e, list_node, &from->entries) {
-        if (delta + e->tx_bytes <= ideal_delta) {
+        if (delta + e->tx_bps_avg <= ideal_delta) {
             /* Take next entry if amount to rebalance will not exceed ideal. */
             to_migrate[cnt++] = e;
-            delta += e->tx_bytes;
+            delta += e->tx_bps_avg;
         }
         if (ideal_delta - delta < migration_threshold) {
             /* Stop collecting hashes if we're close enough to the ideal value
@@ -1263,13 +1266,13 @@ choose_entries_to_migrate(const struct bond_member *from, uint64_t to_tx_bytes,
 
         ASSIGN_CONTAINER(closest, ovs_list_back(&from->entries), list_node);
 
-        delta = closest->tx_bytes;
+        delta = closest->tx_bps_avg;
         to_migrate[cnt++] = closest;
     }
 
-    new_low = MIN(from->tx_bytes - delta, to_tx_bytes + delta);
-    if ((new_low > to_tx_bytes) &&
-        (new_low - to_tx_bytes >= migration_threshold)) {
+    new_low = MIN(from->tx_bps_avg - delta, to_tx_bps_avg + delta);
+    if ((new_low > to_tx_bps_avg) &&
+        (new_low - to_tx_bps_avg >= migration_threshold)) {
        /* Only rebalance if the new 'low' is closer to to the mid point and the
         * improvement of traffic deviation from the ideal split exceeds 10%
         * (migration threshold).
@@ -1290,7 +1293,7 @@ insert_bal(struct ovs_list *bals, struct bond_member *member)
     struct bond_member *pos;
 
     LIST_FOR_EACH (pos, bal_node, bals) {
-        if (member->tx_bytes > pos->tx_bytes) {
+        if (member->tx_bps_avg > pos->tx_bps_avg) {
             break;
         }
     }
@@ -1356,7 +1359,7 @@ bond_rebalance(struct bond *bond)
     /* Add each bond_entry to its member's 'entries' list.
      * Compute each member's tx_bytes as the sum of its entries' tx_bytes. */
     HMAP_FOR_EACH (member, hmap_node, &bond->members) {
-        member->tx_bytes = 0;
+        member->tx_bps_avg = 0;
         ovs_list_init(&member->entries);
     }
 
@@ -1368,10 +1371,12 @@ bond_rebalance(struct bond *bond)
     /* Iteration over sorted bond hashes will give us sorted 'entries'. */
     for (int i = 0; i < BOND_BUCKETS; i++) {
         e = hashes[i];
+        uint64_t tx_bps_avg = e->tx_bytes / rebalance_interval_sec;
         if (e->member && e->tx_bytes) {
-            e->member->tx_bytes += e->tx_bytes;
+            e->member->tx_bps_avg += tx_bps_avg + e->tx_bps_avg;
             ovs_list_push_back(&e->member->entries, &e->list_node);
         }
+        e->tx_bps_avg = tx_bps_avg;
     }
 
     /* Add enabled members to 'bals' in descending order of tx_bytes.
@@ -1402,8 +1407,8 @@ bond_rebalance(struct bond *bond)
         struct bond_member *to
             = bond_member_from_bal_node(ovs_list_back(&bals));
 
-        overload = (from->tx_bytes - to->tx_bytes) / rebalance_interval_sec;
-        if (overload < (to->tx_bytes / rebalance_interval_sec) >> 5 ||
+        overload = from->tx_bps_avg - to->tx_bps_avg;
+        if (overload < to->tx_bps_avg >> 5 ||
             overload * 8 / 1000000 < overload_threshold) {
             /* The extra average load per second on 'from' (and all less-loaded
              * members), compared to that of 'to' (the least-loaded member), is
@@ -1414,7 +1419,7 @@ bond_rebalance(struct bond *bond)
 
         /* 'from' is carrying significantly more load than 'to'.  Pick hashes
          * to move from 'from' to 'to'. */
-        size_t cnt = choose_entries_to_migrate(from, to->tx_bytes, hashes);
+        size_t cnt = choose_entries_to_migrate(from, to->tx_bps_avg, hashes);
         if (!cnt) {
             /* Can't usefully migrate anything away from 'from'.
              * Don't reconsider it. */
@@ -1440,11 +1445,9 @@ bond_rebalance(struct bond *bond)
         rebalanced = true;
     }
 
-    /* Implement exponentially weighted moving average.  A weight of 1/2 causes
-     * historical data to decay to <1% in 7 rebalancing runs.  1,000,000 bytes
-     * take 20 rebalancing runs to decay to 0 and get deleted entirely. */
+    /* Zeroize tx_bytes so hash AVG speed can be calculated accurately. */
     for (e = &bond->hash[0]; e <= &bond->hash[BOND_MASK]; e++) {
-        e->tx_bytes /= 2;
+        e->tx_bytes = 0;
     }
 
     if (rebalanced) {
@@ -1455,8 +1458,8 @@ bond_rebalance(struct bond *bond)
             if (++i > 1) {
                 ds_put_cstr(&member_stats, " and ");
             }
-            ds_put_format(&member_stats, "%s:%"PRIu64"kB", member->name,
-                          member->tx_bytes / 1024);
+            ds_put_format(&member_stats, "%s:%"PRIu64"kB/s", member->name,
+                          member->tx_bps_avg / 1024);
         }
         VLOG_INFO("bond %s: rebalanced (now carrying: %s)",
                   bond->name, ds_cstr(&member_stats));
